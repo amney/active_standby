@@ -2,7 +2,7 @@ import json
 import re
 import thread
 from random import randrange
-from time import sleep
+from time import sleep, strftime
 
 import click
 import requests
@@ -24,14 +24,24 @@ urllib3.disable_warnings()
 def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, debug=False):
     def refresh_subscription(sub_id):
         while True:
-            sleep(randrange(40, 50))
-            print "Refreshing subscription", sub_id
+            sleep(50)
+            print "[{}] Refreshing subscription ID {}".format(strftime("%H:%M:%S"), sub_id)
             query = "https://{apic_address}/api/subscriptionRefresh.json.json?id={sub_id}".format(sub_id=sub_id,
                                                                                                   apic_address=apic_address)
 
             resp = s.get(query, verify=False)
             if not resp.ok:
                 exit("Failed to refresh subscription ID {}".format(sub_id))
+
+    def refresh_login():
+        while True:
+            sleep(240)
+            print "[{}] Refreshing login".format(strftime("%H:%M:%S"))
+            query = "https://{apic_address}/api/aaaRefresh.json.json".format(apic_address=apic_address)
+
+            resp = s.get(query, verify=False)
+            if not resp.ok:
+                exit("Failed to refresh login")
 
     def on_message(ws, message):
         message = json.loads(message)
@@ -142,6 +152,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
 
     auth = r.json()["imdata"][0]["aaaLogin"]
     token = auth["attributes"]["token"]
+    thread.start_new_thread(refresh_login, ())
     print "  Session token = {token}...".format(token=str.join('', token[0:15]))
     print ""
     print "==================================================="
