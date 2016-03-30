@@ -17,10 +17,12 @@ urllib3.disable_warnings()
 @click.option('--apic-user', help="User with enough priviledges to read aaaModLR", prompt=True)
 @click.option('--apic-pass', help="APIC user password", prompt=True, hide_input=True, confirmation_prompt=True)
 @click.option('--debug', help="Show detailed websocket information")
-@click.option('--pc-active', help="Name of Active Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po1]", prompt=True)
-@click.option('--pc-standby', help="Name of Standby Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po2]", prompt=True)
+@click.option('--pc-active', help="Name of Active Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po1]",
+              prompt=True)
+@click.option('--pc-standby', help="Name of Standby Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po2]",
+              prompt=True)
 def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, debug=False):
-    def referesh_subscription(sub_id):
+    def refresh_subscription(sub_id):
         while True:
             sleep(randrange(40, 50))
             print "Refreshing subscription", sub_id
@@ -86,7 +88,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
             exit("Active Port Channel is not up. Please bring it up before launching tool")
 
         sub_id = resp.json()['subscriptionId']
-        thread.start_new_thread(referesh_subscription, (sub_id,))
+        thread.start_new_thread(refresh_subscription, (sub_id,))
 
         # Query for Standby PC and check it is down
         query = "https://{apic_address}/api/mo/{pc_standby}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
@@ -108,6 +110,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
         pc_policy = pc_standby.replace('node', 'paths')
         pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{}]'.format(pc_name), pc_policy)
         active_standby.port_channel_policy = pc_policy
+
         print "Found Standby Port Channel Path"
         print "    {}".format(pc_policy)
         print ""

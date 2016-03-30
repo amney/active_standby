@@ -2,7 +2,9 @@
 
 Dynamically enable a standby port channel when the active port channel goes down
 
-The major use case for this is for high availability appliance clusters such as firewalls or load balancers. Some appliances cannot work in a active/active fashion so we must bring up the standby link on failure of the active.
+The major use case for this is for high availability appliance clusters such as firewalls or load balancers.  
+
+Some appliances cannot work in a active/active fashion so we must bring up the standby link on failure of the active.
 
 ## Usage Summary
 
@@ -16,7 +18,7 @@ The tool subscribes over a Websocket to events on the active port channel
 
 When the tool receives an event that the port channel has gone down it: 
 
-- Attemps to enable the "Standby" port channel
+- Attempts to enable the "Standby" port channel
 - Depending on the result of enabling the prot channel exits with either a success or failure code
 
 At this point the Administrator needs to perform some remediation to bring up the Active link and then disable the Standby link
@@ -31,7 +33,7 @@ At this point the Administrator needs to perform some remediation to bring up th
 
 ## Launching
 
-> The name of a port channel is a unique identifier (called DN is ACI)
+> The name of a port channel is a unique identifier (called a DN in ACI)
 > 
 > Because of the way port channels are allocated on switches we must be careful to find the exact name
 > 
@@ -43,7 +45,7 @@ At this point the Administrator needs to perform some remediation to bring up th
 > 
 > Click "Show Debug Info"
 > 
-> In the bottom status bar find the text that looks similiar to `topology/pod-1/node-101/sys/aggr-[po1]`
+> In the bottom status bar find the text that looks similar to `topology/pod-1/node-101/sys/aggr-[po1]`
 > 
 > Copy this: it is your Port Channel name!
 
@@ -56,7 +58,8 @@ To pass your parameters you can either:
 - (a) Pass each input parameter before launching using the -- parameters below 
 
 - (b) Export one or more parameters as environment variables 
-	- (prefix each env variable with AS, e.g. `export AS_APIC_USER="admin"`)
+	(prefix each env variable with AS, e.g. `export AS_APIC_USER="admin"`)  
+  
 - (c) Answer the interactive prompts at run time
  
 ```
