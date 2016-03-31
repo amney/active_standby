@@ -1,7 +1,6 @@
 import json
 import re
 import thread
-from random import randrange
 from time import sleep, strftime
 
 import click
