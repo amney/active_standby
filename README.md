@@ -16,10 +16,10 @@ This tool has a couple of requirements:
 
 The tool subscribes over a Websocket to events on the active port channel
 
-When the tool receives an event that the port channel has gone down it: 
+When the tool receives an event that the active port channel has gone down it: 
 
 - Attempts to enable the "Standby" port channel
-- Depending on the result of enabling the prot channel exits with either a success or failure code
+- Depending on the result of enabling the port channel exits with either a success or failure code
 
 At this point the Administrator needs to perform some remediation to bring up the Active link and then disable the Standby link
 
