@@ -55,7 +55,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 print "              FLIPPING TO STANDBY                  "
                 print "==================================================="
 
-		# unshut the standby (by deleting from oos)
+                # unshut the standby (by deleting from oos)
                 query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
                 data = {
                     "fabricRsOosPath": {
@@ -73,7 +73,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 else:
                     print "Flipped to Standby Port Channel."
 
-		# shut the active (by blacklisting)
+                # shut the active (by blacklisting)
                 query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
                 data = {
                     "fabricRsOosPath": {
@@ -90,7 +90,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                     exit("Failed to shut Active Port Channel - CRITICAL ERROR")
                     print "Shut Active Port Channel. "
 
-		exit ("Please fix issue then restart monitoring tool")
+                exit("Please fix issue then restart monitoring tool")
         except KeyError:
             print "Saw an event on Active Port Channel but did it did not change the amount of active ports"
         except ValueError:
