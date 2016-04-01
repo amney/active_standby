@@ -54,12 +54,13 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 print "              FLIPPING TO STANDBY                  "
                 print "==================================================="
 
+		# unshut the standby (by deleting from oos)
                 query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
                 data = {
                     "fabricRsOosPath": {
                         "attributes": {
                             "dn": "uni/fabric/outofsvc/rsoosPath-[{port_channel_policy}]".format(
-                                port_channel_policy=active_standby.port_channel_policy),
+                                port_channel_policy=active_standby.port_channel_policy_standby),
                             "status": "deleted"
                         }
                     }
@@ -69,7 +70,26 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 if not resp.ok:
                     exit("Failed to flip to Standby Port Channel - CRITICAL ERROR")
                 else:
-                    exit("Flipped to Standby Port Channel. Please fix issue then restart monitoring tool")
+                    print "Flipped to Standby Port Channel."
+
+		# shut the active (by blacklisting)
+                query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
+                data = {
+                    "fabricRsOosPath": {
+                        "attributes": {
+                            "tDn": "{port_channel_policy}".format(
+                                port_channel_policy=active_standby.port_channel_policy_active),
+                            "lc": "blacklist"
+                        }
+                    }
+                }
+
+                resp = s.post(query, json=data, verify=False)
+                if not resp.ok:
+                    exit("Failed to shut Active Port Channel - CRITICAL ERROR")
+                    print "Shut Active Port Channel. "
+
+		exit ("Please fix issue then restart monitoring tool")
         except KeyError:
             print "Saw an event on Active Port Channel but did it did not change the amount of active ports"
         except ValueError:
@@ -99,6 +119,25 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
         sub_id = resp.json()['subscriptionId']
         thread.start_new_thread(refresh_subscription, (sub_id,))
 
+        # Query for Active PC and get it's path/name
+        query = "https://{apic_address}/api/mo/{pc_active}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
+            pc_active=pc_active,
+            apic_address=apic_address)
+        resp = s.get(query, verify=False)
+        if not resp.ok:
+            exit("Failed to query Active link")
+
+        resp = resp.json()['imdata'][0]['pcAggrIf']
+
+        port_channel = resp['children'][0]['ethpmAggrIf']['attributes']
+        if port_channel['operStQual'] == 'admin-down':
+            exit("Active Port Channel should be admin up")
+
+        pc_name = resp['attributes']['name']
+        pc_policy = pc_active.replace('node', 'paths')
+        pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{}]'.format(pc_name), pc_policy)
+        active_standby.port_channel_policy_active = pc_policy
+
         # Query for Standby PC and check it is down
         query = "https://{apic_address}/api/mo/{pc_standby}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
             pc_standby=pc_standby,
@@ -118,10 +157,11 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
         pc_name = resp['attributes']['name']
         pc_policy = pc_standby.replace('node', 'paths')
         pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{}]'.format(pc_name), pc_policy)
-        active_standby.port_channel_policy = pc_policy
+        active_standby.port_channel_policy_standby = pc_policy
 
-        print "Found Standby Port Channel Path"
-        print "    {}".format(pc_policy)
+        print "Found Port Channel Paths"
+        print "    Active: {}".format(active_standby.port_channel_policy_active)
+        print "    Stndby: {}".format(active_standby.port_channel_policy_standby)
         print ""
         print "==================================================="
         print ""
