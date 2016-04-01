@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 import thread
 from time import sleep, strftime
 
@@ -13,7 +14,7 @@ urllib3.disable_warnings()
 
 @click.command()
 @click.option('--apic-address', help="DNS or IP address of your APIC", prompt=True)
-@click.option('--apic-user', help="User with enough priviledges to read aaaModLR", prompt=True)
+@click.option('--apic-user', help="User with enough priviledeges to modify fabric interfaces", prompt=True)
 @click.option('--apic-pass', help="APIC user password", prompt=True, hide_input=True, confirmation_prompt=True)
 @click.option('--debug', is_flag=True, help="Show detailed websocket information")
 @click.option('--pc-active', help="Name of Active Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po1]",
@@ -21,7 +22,7 @@ urllib3.disable_warnings()
 @click.option('--pc-standby', help="Name of Standby Port Channel e.g. topology/pod-1/node-101/sys/aggr-[po2]",
               prompt=True)
 @click.option('--callback', help="Path to executable file that will be run after switchover")
-def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, debug=False):
+def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, debug=False, callback=None):
     def refresh_subscription(sub_id):
         while True:
             sleep(50)
@@ -89,6 +90,18 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 if not resp.ok:
                     exit("Failed to shut Active Port Channel - CRITICAL ERROR")
                     print "Shut Active Port Channel. "
+
+                if callback:
+                    print "Attempting to launch callback script"
+                    try:
+                        subprocess.check_call([callback], shell=True)
+                    except OSError as e:
+                        print e.message
+                        exit("Could not find callback script")
+                    except subprocess.CalledProcessError as e:
+                        print e.message
+                        exit("Callback script ended with a non-successful return code")
+                    print "Callback script finished"
 
                 exit("Please fix issue then restart monitoring tool")
         except KeyError:

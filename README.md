@@ -19,6 +19,8 @@ The tool subscribes over a Websocket to events on the active port channel
 When the tool receives an event that the active port channel has gone down it: 
 
 - Attempts to enable the "Standby" port channel
+- Attempts to disable (blacklist) the "Active" port channel
+- If specified, run a user specified script (for example to send a notification email)
 - Depending on the result of enabling the port channel exits with either a success or failure code
 
 At this point the Administrator needs to perform some remediation to bring up the Active link and then disable the Standby link
@@ -64,15 +66,41 @@ To pass your parameters you can either:
  
 ```
 Usage: active_standby.py [OPTIONS]
-	
+
 Options:
   --apic-address TEXT  DNS or IP address of your APIC
-  --apic-user TEXT     User with enough priviledges to read aaaModLR
+  --apic-user TEXT     User with enough priviledeges to modify fabric
+                       interfaces
   --apic-pass TEXT     APIC user password
-  --debug TEXT         Show detailed websocket information
+  --debug              Show detailed websocket information
   --pc-active TEXT     Name of Active Port Channel e.g.
                        topology/pod-1/node-101/sys/aggr-[po1]
   --pc-standby TEXT    Name of Standby Port Channel e.g.
                        topology/pod-1/node-101/sys/aggr-[po2]
+  --callback TEXT      Path to executable file that will be run after
+                       switchover
   --help               Show this message and exit.
 ```
+
+## Advanced
+
+### Callback Script
+When a failure is detected it is expected some sort of further action or notification should be performed
+
+This can be achieved by specify the path to a callback script using the `--callback` parameter
+
+The callback script can be any executable file. We have included `example_callback.py` for reference.
+
+### High Availability
+Because this tool is idempotent you can launch multiple instances pointed at the same pair of port channels for high availability
+
+When a failure is detected all instances subscribed will be notified and attempt to perform the failover.
+
+The APIC will understand this and will handle it gracefully. Both instances will exit on failover
+
+> Please note if you have set up a callback script, all instances will run it on failover
+
+### Monitoring Standby Link
+A simple Bash script can be used to continuously monitor both the active and standby links.
+
+On switchover the tool will exit. The secondary link will then by monitored by the tool. To failback to the primary shut the secondary link. This will cause an automatic switchover by the tool at which point it will begin monitoring the primary link
