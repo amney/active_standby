@@ -1,5 +1,4 @@
 # ACI Active / Standby 
-
 Dynamically enable a standby port channel when the active port channel goes down
 
 The major use case for this is for high availability appliance clusters such as firewalls or load balancers.  
@@ -7,7 +6,6 @@ The major use case for this is for high availability appliance clusters such as 
 Some appliances cannot work in a active/active fashion so we must bring up the standby link on failure of the active.
 
 ## Usage Summary
-
 This tool has a couple of requirements:
 
 - You have two port channels configured in ACI
@@ -29,12 +27,22 @@ At this point the Administrator needs to perform some remediation to bring up th
 ## Installation
 
 - Clone this repository
-- Install Python requirements
-        
-        pip install -r requirements.txt
+- Install using `python setup.py install`
+
+## Installation on an APIC  
+
+> Note: Cisco does not explicitly support running user code on the APIC  
+> Explicitly use `python2.7` as the APIC uses Python 2.6 by default
+
+- Make sure your APIC has DNS and external connectivity to pypi.python.org
+- Upload a copy of the tool to your home directory on the APIC
+- Add your user local packages directory to your `$PYTHONPATH` 
+- `export PYTHONPATH=$PYTHONPATH:/home/admin/.local/lib/python2.7/site-packages/`
+- Run `python2.7 setup.py install --user`
+- This will install the required dependencies
+- Check you can launch the tool with `python2.7 active_standby.py`
 
 ## Launching
-
 > The name of a port channel is a unique identifier (called a DN in ACI)
 > 
 > Because of the way port channels are allocated on switches we must be careful to find the exact name
