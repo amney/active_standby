@@ -18,7 +18,7 @@ When the tool receives an event that the active port channel has gone down it:
 
 - Attempts to enable the "Standby" port channel
 - Attempts to disable (blacklist) the "Active" port channel
-- If specified, run a user specified script (for example to send a notification email)
+- If specified, run a user callback script (for example to send a notification email)
 - Depending on the result of enabling the port channel exits with either a success or failure code
 
 At this point the Administrator needs to perform some remediation to bring up the Active link and then disable the Standby link
