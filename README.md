@@ -31,7 +31,8 @@ At this point the Administrator needs to perform some remediation to bring up th
 
 ## Installation on an APIC  
 
-> Note: Cisco does not explicitly support running user code on the APIC  
+> Cisco does not provide TAC support for running user code on the APIC  
+> Resource usage is limited by Linux Cgroups   
 > Explicitly use `python2.7` as the APIC uses Python 2.6 by default
 
 - Make sure your APIC has DNS and external connectivity to pypi.python.org
