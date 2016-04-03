@@ -89,7 +89,7 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
                 resp = s.post(query, json=data, verify=False)
                 if not resp.ok:
                     exit("Failed to shut Active Port Channel - CRITICAL ERROR")
-                    print "Shut Active Port Channel. "
+                print "Shut Active Port Channel. "
 
                 if callback:
                     print "Attempting to launch callback script"
