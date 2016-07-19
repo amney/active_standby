@@ -1,0 +1,7 @@
+/var/log/active_standby_client1.log {
+    missingok
+    rotate 30
+    compress
+    daily
+    copytruncate
+}

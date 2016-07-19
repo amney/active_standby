@@ -11,7 +11,7 @@ setup(
     description='Dynamically enable a standby port channel when the active port channel goes down',
     install_requires=[
         'click',
-        'requests',
+        'requests>=2.0.0',
         'websocket-client'
     ]
 )

@@ -1,7 +1,11 @@
 import json
 import re
 import subprocess
-import thread
+import sys
+if sys.version_info[0] == 2:
+    import thread
+else:
+    import _thread
 from time import sleep, strftime
 
 import click
@@ -26,167 +30,235 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
     def refresh_subscription(sub_id):
         while True:
             sleep(50)
-            print "[{}] Refreshing subscription ID {}".format(strftime("%H:%M:%S"), sub_id)
+            logmsg("Refreshing subscription ID {id}".format(id=sub_id))
             query = "https://{apic_address}/api/subscriptionRefresh.json.json?id={sub_id}".format(sub_id=sub_id,
                                                                                                   apic_address=apic_address)
 
             resp = s.get(query, verify=False)
             if not resp.ok:
-                exit("Failed to refresh subscription ID {}".format(sub_id))
+                exit(logmsg("Failed to refresh subscription ID {id}".format(id=sub_id)))
 
     def refresh_login():
         while True:
             sleep(240)
-            print "[{}] Refreshing login".format(strftime("%H:%M:%S"))
+            logmsg("Refreshing login")
             query = "https://{apic_address}/api/aaaRefresh.json.json".format(apic_address=apic_address)
 
             resp = s.get(query, verify=False)
             if not resp.ok:
-                exit("Failed to refresh login")
+                exit(logmsg("Failed to refresh login"))
 
-    def on_message(ws, message):
-        message = json.loads(message)
-        message = message["imdata"][0]["ethpmAggrIf"]['attributes']
+    def logmsg(msg):
+        print(strftime("[%Y-%m-%d %H:%M] {msg}").format(msg=msg))
 
+    def pc_attr (pc_name):
         try:
-            active_port_count = int(message['numActivePorts'])
-            if active_port_count == 0:
-                print "==================================================="
-                print "             LOST ALL ACTIVE PORTS                 "
-                print "              FLIPPING TO STANDBY                  "
-                print "==================================================="
+            # Query PC and return it's attributes
+            query = "https://{apic_address}/api/mo/{pc_name}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
+                pc_name=pc_name,
+                apic_address=apic_address)
+    
+            resp = s.get(query, verify=False)
+    
+            if not resp.ok:
+                return FALSE
+    
+            pc_agg = resp.json()['imdata'][0]['pcAggrIf']
+    
+            if pc_agg:
+                return pc_agg
+        
+            return FALSE
 
-                # unshut the standby (by deleting from oos)
-                query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
-                data = {
-                    "fabricRsOosPath": {
-                        "attributes": {
-                            "dn": "uni/fabric/outofsvc/rsoosPath-[{port_channel_policy}]".format(
-                                port_channel_policy=active_standby.port_channel_policy_standby),
-                            "status": "deleted"
-                        }
-                    }
-                }
-
-                resp = s.post(query, json=data, verify=False)
-                if not resp.ok:
-                    exit("Failed to flip to Standby Port Channel - CRITICAL ERROR")
-                else:
-                    print "Flipped to Standby Port Channel."
-
-                # shut the active (by blacklisting)
-                query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
-                data = {
-                    "fabricRsOosPath": {
-                        "attributes": {
-                            "tDn": "{port_channel_policy}".format(
-                                port_channel_policy=active_standby.port_channel_policy_active),
-                            "lc": "blacklist"
-                        }
-                    }
-                }
-
-                resp = s.post(query, json=data, verify=False)
-                if not resp.ok:
-                    exit("Failed to shut Active Port Channel - CRITICAL ERROR")
-                print "Shut Active Port Channel. "
-
-                if callback:
-                    print "Attempting to launch callback script"
-                    try:
-                        subprocess.check_call([callback], shell=True)
-                    except OSError as e:
-                        print e.message
-                        exit("Could not find callback script")
-                    except subprocess.CalledProcessError as e:
-                        print e.message
-                        exit("Callback script ended with a non-successful return code")
-                    print "Callback script finished"
-
-                exit("Please fix issue then restart monitoring tool")
         except KeyError:
-            print "Saw an event on Active Port Channel but did it did not change the amount of active ports"
+            logmsg("KeyError in pc_attr")
         except ValueError:
-            print "Could not parse numActivePorts into an integer"
+            logmsg("ValError in pc_attr")
 
+  
+    def on_message(ws, message):
+        jmessage = json.loads(message)
+        message = jmessage["imdata"][0]["ethpmAggrIf"]['attributes']
+
+        for sub_id in jmessage['subscriptionId']:
+
+            active_port_count = 0
+            if 'numActivePorts' in message:
+                active_port_count = int(message['numActivePorts'])
+    
+            if sub_id == active_standby.standby_sub_id:
+                # the event was on the subscription for the standby link, someone unshut it, lets stop that 
+    
+                # when the standby is unshut, a message is received with operStQual == 'port-channel-members-down'.
+                # then after some time if the portchannel comes up the 'numActivePorts' >= 0
+                # we'll try catch it on the first message, otherwise wait for following message
+    
+                being_unshut = False 
+                if 'status' in message and 'operStQual' in message:
+                    if message['status'] == 'modified' and message['operStQual'] == 'port-channel-members-down':
+                        being_unshut = True
+    
+                if active_port_count > 0 or being_unshut:
+                    # shutdown the standby (by blacklisting)
+                    query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
+                    data = {
+                        "fabricRsOosPath": {
+                            "attributes": {
+                                "tDn": "{port_channel_policy}".format(
+                                    port_channel_policy=active_standby.port_channel_policy_standby),
+                                "lc": "blacklist"
+                            }
+                        }
+                    }
+    
+                    resp = s.post(query, json=data, verify=False)
+                    if not resp.ok:
+                        exit(logmsg("Failed to shut Standby Port Channel - CRITICAL ERROR"))
+                    logmsg("Active PC was up when Standby PC was brought up so it (standby) was shutdown to avoid disaster.")
+        
+            if sub_id == active_standby.active_sub_id:
+                # the event was on the subscription for the active link
+                try:
+                    if active_port_count == 0:
+                        logmsg("===================================================")
+                        logmsg("             LOST ALL ACTIVE PORTS                 ")
+                        logmsg("              FLIPPING TO STANDBY                  ")
+                        logmsg("===================================================")
+        
+                        # unshut the standby (by deleting from oos)
+                        query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
+                        data = {
+                            "fabricRsOosPath": {
+                                "attributes": {
+                                    "dn": "uni/fabric/outofsvc/rsoosPath-[{port_channel_policy}]".format(
+                                        port_channel_policy=active_standby.port_channel_policy_standby),
+                                    "status": "deleted"
+                                }
+                            }
+                        }
+        
+                        resp = s.post(query, json=data, verify=False)
+                        if not resp.ok:
+                            exit(logmsg("Failed to flip to Standby Port Channel - CRITICAL ERROR"))
+                        else:
+                            logmsg("Flipped to Standby Port Channel.")
+        
+                        # shut the active (by blacklisting)
+                        query = "https://{apic_address}/api/node/mo/uni/fabric/outofsvc.json".format(apic_address=apic_address)
+                        data = {
+                            "fabricRsOosPath": {
+                                "attributes": {
+                                    "tDn": "{port_channel_policy}".format(
+                                        port_channel_policy=active_standby.port_channel_policy_active),
+                                    "lc": "blacklist"
+                                }
+                            }
+                        }
+        
+                        resp = s.post(query, json=data, verify=False)
+                        if not resp.ok:
+                            exit(logmsg("Failed to shut Active Port Channel - CRITICAL ERROR"))
+                        logmsg("Shut Active Port Channel. ")
+        
+                        if callback:
+                            logmsg("Attempting to launch callback script")
+                            try:
+                                subprocess.check_output([callback], shell=True, stderr=subprocess.STDOUT)
+                            except OSError as e:
+                                logmsg("OSError: {msg}".format(msg=e.strerror))
+                                exit(logmsg("Could not find callback script"))
+                            except subprocess.CalledProcessError as e:
+                                logmsg("CalledProcessError: {msg}".format(msg=e.output))
+                                exit(logmsg("Callback script ended with a non-successful return code"))
+                            logmsg("Callback script finished")
+        
+                        exit(logmsg("Please fix issue then restart monitoring tool"))
+                except KeyError:
+                    logmsg("Saw an event on Active Port Channel but did it did not change the amount of active ports")
+                except ValueError:
+                    logmsg("Could not parse numActivePorts into an integer")
+        
     def on_error(ws, error):
-        print error
+        logmsg("{msg}".format(msg=error))
 
     def on_close(ws):
-        print "Gracefully closed connection to APIC"
+        logmsg("Gracefully closed connection to APIC")
 
     def on_open(ws):
         # Subscribe to Active PC and check it is up
-        query = "https://{apic_address}/api/mo/{pc_active}.json?query-target=children&target-subtree-class=ethpmAggrIf&subscription=yes".format(
-            pc_active=pc_active,
+        query = "https://{apic_address}/api/mo/{pc}.json?query-target=children&target-subtree-class=ethpmAggrIf&subscription=yes".format(
+            pc=pc_active,
             apic_address=apic_address)
 
         resp = s.get(query, verify=False)
         if not resp.ok:
-            exit("Failed to subscribe to Active link")
+            exit(logmsg("Failed to subscribe to Active link"))
 
         port_channel = resp.json()['imdata'][0]['ethpmAggrIf']['attributes']
 
         if port_channel['operSt'] != "up":
-            exit("Active Port Channel is not up. Please bring it up before launching tool")
+            exit(logmsg("Active Port Channel is not up. Please bring it up before launching tool"))
 
-        sub_id = resp.json()['subscriptionId']
-        thread.start_new_thread(refresh_subscription, (sub_id,))
+        active_standby.active_sub_id = sub_id = resp.json()['subscriptionId']
+        if sys.version_info[0] == 2:
+            thread.start_new_thread(refresh_subscription, (sub_id,))
+        else:
+            _thread.start_new_thread(refresh_subscription, (sub_id,))
+        logmsg("Subscribed to Active PC: {pc} Sub ID: {id}".format(pc=pc_active, id=sub_id))
 
-        # Query for Active PC and get it's path/name
-        query = "https://{apic_address}/api/mo/{pc_active}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
-            pc_active=pc_active,
+        # Subscribe to Standby PC and ensure it's down
+        query = "https://{apic_address}/api/mo/{pc}.json?query-target=children&target-subtree-class=ethpmAggrIf&subscription=yes".format(
+            pc=pc_standby,
             apic_address=apic_address)
+
         resp = s.get(query, verify=False)
         if not resp.ok:
-            exit("Failed to query Active link")
+            exit(logmsg("Failed to subscribe to Standby link"))
 
-        resp = resp.json()['imdata'][0]['pcAggrIf']
+        port_channel = resp.json()['imdata'][0]['ethpmAggrIf']['attributes']
 
-        port_channel = resp['children'][0]['ethpmAggrIf']['attributes']
-        if port_channel['operStQual'] == 'admin-down':
-            exit("Active Port Channel should be admin up")
+        if port_channel['operSt'] == "up":
+            exit(logmsg("Standby Port Channel is up. Please bring it down before launching tool"))
 
-        pc_name = resp['attributes']['name']
+        active_standby.standby_sub_id = sub_id = resp.json()['subscriptionId']
+        if sys.version_info[0] == 2:
+            thread.start_new_thread(refresh_subscription, (sub_id,))
+        else:
+            _thread.start_new_thread(refresh_subscription, (sub_id,))
+        logmsg("Subscribed to Stndby PC: {pc} Sub ID: {id}".format(pc=pc_standby, id=sub_id))
+
+        # Query for Active PC and check it is up
+        pc_agg = pc_attr(pc_active)
+        pc_member = pc_agg['children'][0]['ethpmAggrIf']['attributes']
+
+        if pc_member['operStQual'] == 'admin-down':
+            exit(logmsg("Active Port Channel should be admin up"))
+
+        pc_name = pc_agg['attributes']['name']
         pc_policy = pc_active.replace('node', 'paths')
-        pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{}]'.format(pc_name), pc_policy)
+        pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{pc}]'.format(pc=pc_name), pc_policy)
         active_standby.port_channel_policy_active = pc_policy
 
         # Query for Standby PC and check it is down
-        query = "https://{apic_address}/api/mo/{pc_standby}.json?query-target=self&rsp-subtree=children&rsp-subtree-class=ethpmAggrIf".format(
-            pc_standby=pc_standby,
-            apic_address=apic_address)
-        resp = s.get(query, verify=False)
-        if not resp.ok:
-            exit("Failed to subscribe to Standby link")
+        pc_agg = pc_attr(pc_standby)
+        pc_member = pc_agg['children'][0]['ethpmAggrIf']['attributes']
 
-        resp = resp.json()['imdata'][0]['pcAggrIf']
+        if pc_member['operStQual'] != 'admin-down':
+            exit(logmsg("Standby Port Channel should be admin down"))
 
-        port_channel = resp['children'][0]['ethpmAggrIf']['attributes']
-        if port_channel['operSt'] == "up":
-            exit("Standby Port Channel is up. Please bring it down before launching tool")
-        if port_channel['operStQual'] != 'admin-down':
-            exit("Standby Port Channel should be admin down")
-
-        pc_name = resp['attributes']['name']
+        pc_name = pc_agg['attributes']['name']
         pc_policy = pc_standby.replace('node', 'paths')
-        pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{}]'.format(pc_name), pc_policy)
+        pc_policy = re.sub(r'sys/aggr-\[.*\]', 'pathep-[{pc}]'.format(pc=pc_name), pc_policy)
         active_standby.port_channel_policy_standby = pc_policy
 
-        print "Found Port Channel Paths"
-        print "    Active: {}".format(active_standby.port_channel_policy_active)
-        print "    Stndby: {}".format(active_standby.port_channel_policy_standby)
-        print ""
-        print "==================================================="
-        print ""
+        logmsg("PC Path Active: {pc}".format(pc=active_standby.port_channel_policy_active))
+        logmsg("PC Path Stndby: {pc}".format(pc=active_standby.port_channel_policy_standby))
 
-    print ""
-    print "==================================================="
-    print "Active Standby Tool"
-    print "==================================================="
-    print ""
+    logmsg("===================================================")
+    logmsg("Active Standby Tool")
+    logmsg("===================================================")
 
-    print "Authenticating with APIC"
+    logmsg("Authenticating with APIC")
     data = {
         "aaaUser": {
             "attributes": {
@@ -201,21 +273,15 @@ def active_standby(apic_address, apic_user, apic_pass, pc_active, pc_standby, de
     r = s.post('https://{apic_address}/api/aaaLogin.json'.format(apic_address=apic_address), json=data, verify=False)
 
     if not r.ok:
-        exit(" Failed to authenticate with APIC")
+        exit(logmsg(" Failed to authenticate with APIC"))
 
     auth = r.json()["imdata"][0]["aaaLogin"]
     token = auth["attributes"]["token"]
-    thread.start_new_thread(refresh_login, ())
-    print "  Session token = {token}...".format(token=str.join('', token[0:15]))
-    print ""
-    print "==================================================="
-    print "Subscribing to Port Channel (a) Active"
-    print "    {}".format(pc_active)
-    print ""
-    print "Subscribing to Port Channel (b) Standby"
-    print "    {}".format(pc_standby)
-    print "==================================================="
-    print ""
+    if sys.version_info[0] == 2:
+        thread.start_new_thread(refresh_login, ())
+    else:
+        _thread.start_new_thread(refresh_login, ())
+    logmsg("  Session token = {token}...".format(token=str.join('', token[0:15])))
 
     if debug:
         websocket.enableTrace(True)
