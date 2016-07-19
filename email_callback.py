@@ -50,4 +50,4 @@ try:
 
 	#print "Successfully sent email"
 except SMTPException:
-	print "Error: unable to send email"
+	print("Error: unable to send email")
